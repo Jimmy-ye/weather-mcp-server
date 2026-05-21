@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "weather-mcp-server"
+version = "0.1.0"
+description = "MCP server for Chinese city weather data via Open-Meteo API"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "httpx>=0.27.0",
+    "PsychroLib>=2.5.0",
+]
+
+[project.scripts]
+weather-mcp = "weather_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/weather_mcp"]
