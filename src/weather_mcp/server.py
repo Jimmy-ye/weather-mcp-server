@@ -22,6 +22,7 @@ from mcp.server.fastmcp import FastMCP
 from . import weather_service
 from . import psychrometric_service
 from .params import PSYCHROMETRIC_INPUT_VARIABLES
+from .tables import daily_table, monthly_table, hddcdd_table
 
 logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s %(message)s")
 
@@ -467,6 +468,147 @@ async def get_hourly(
     if response_format == "markdown":
         return _format_hourly(data)
     return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+# =============================================================================
+# 表格工具（CSV + 文本摘要）
+# =============================================================================
+
+@mcp.tool(
+    name="weather_table_daily",
+    annotations={
+        "title": "日级气象数据表格",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def table_daily(
+    city: str,
+    start_date: str,
+    end_date: str,
+    variables: str,
+    province: str | None = None,
+) -> str:
+    """获取日级气象数据的 CSV 表格和文本摘要。
+
+    返回包含每日数据的 CSV（可复制到 Excel）以及关键统计摘要
+    （均值、范围、有效天数）。完整输出所有天数的行，不做截断。
+
+    使用前请先调用 weather_get_params 查看可用变量名。
+
+    Args:
+        city: 城市中文名。
+        start_date: 开始日期 YYYY-MM-DD。
+        end_date: 结束日期 YYYY-MM-DD，范围不超过 366 天。
+        variables: 逗号分隔的 Open-Meteo 变量名。
+        province: 可选省份，同名城市消歧义。
+
+    Returns:
+        文本摘要 + CSV 格式日级数据。
+    """
+    start_date, end_date = _validate_date_range(start_date, end_date)
+    var_list = [v.strip() for v in variables.split(",") if v.strip()]
+    if not var_list:
+        raise ValueError("至少需要一个变量。")
+
+    data = await weather_service.fetch_daily(city, start_date, end_date, var_list, province)
+    return daily_table.format_daily_output(data)
+
+
+@mcp.tool(
+    name="weather_table_monthly",
+    annotations={
+        "title": "月度气象统计表格",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def table_monthly(
+    city: str,
+    start_date: str,
+    end_date: str,
+    variables: str,
+    province: str | None = None,
+) -> str:
+    """获取月度气象统计的 CSV 表格和文本摘要。
+
+    每月一行，包含各变量的均值/最小/最大/累计。
+    CSV 可直接粘贴到 Excel 使用。
+
+    Args:
+        city: 城市中文名。
+        start_date: 开始日期 YYYY-MM-DD。
+        end_date: 结束日期 YYYY-MM-DD，范围不超过 366 天。
+        variables: 逗号分隔的变量名，支持原生和派生变量。
+        province: 可选省份。
+
+    Returns:
+        文本摘要 + CSV 格式月度统计数据。
+    """
+    start_date, end_date = _validate_date_range(start_date, end_date)
+    var_list = [v.strip() for v in variables.split(",") if v.strip()]
+    if not var_list:
+        raise ValueError("至少需要一个变量。")
+
+    data = await weather_service.compute_monthly_summary(
+        city, start_date, end_date, var_list, province
+    )
+    return monthly_table.format_monthly_output(data)
+
+
+@mcp.tool(
+    name="weather_table_hddcdd",
+    annotations={
+        "title": "HDD/CDD 度日数表格",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def table_hddcdd(
+    city: str,
+    start_date: str,
+    end_date: str,
+    province: str | None = None,
+) -> str:
+    """获取 HDD18/CDD26 度日数的 CSV 表格和文本摘要。
+
+    依据 GB 50176-2016《民用建筑热工设计规范》:
+    - HDD18 = max(0, 18 - T_mean)，采暖度日数
+    - CDD26 = max(0, T_mean - 26)，制冷度日数
+
+    每月一行，含月均温、HDD、CDD 及年初至今累计值。
+
+    Args:
+        city: 城市中文名。
+        start_date: 开始日期 YYYY-MM-DD。
+        end_date: 结束日期 YYYY-MM-DD，范围不超过 366 天。
+        province: 可选省份。
+
+    Returns:
+        文本摘要（全年 HDD/CDD 总量、采暖/制冷最大月）+ CSV 数据。
+    """
+    start_date, end_date = _validate_date_range(start_date, end_date)
+
+    daily = await weather_service.fetch_daily(
+        city, start_date, end_date,
+        ["temperature_2m_mean"],
+        province,
+    )
+
+    return hddcdd_table.format_hddcdd_output(
+        dates=daily["time"],
+        tmean=daily["data"].get("temperature_2m_mean", []),
+        city=daily["city"],
+        province=daily["province"],
+        start_date=daily["start_date"],
+        end_date=daily["end_date"],
+    )
 
 
 # =============================================================================
