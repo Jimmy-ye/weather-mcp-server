@@ -329,6 +329,10 @@ async def get_monthly(
     基于日级数据按月计算 min/max/mean/sum。支持湿空气派生变量
     （wet_bulb_mean, enthalpy_mean 等）的月度聚合。
 
+    湿空气派生变量使用地表气压 (surface_pressure) 计算，高海拔城市更准确。
+    ERA5-Land 分辨率约 11km，地形剧烈变化区域存在一定偏差，
+    高海拔城市的湿空气月度统计建议作为趋势参考使用。
+
     Args:
         city: 城市中文名。
         start_date: 开始日期 YYYY-MM-DD。
@@ -381,7 +385,11 @@ async def get_psychrometrics(
     - 焓值 (enthalpy_mean): kJ/kg_da
     - 比容 (specific_volume_mean): m³/kg_da
 
-    优先使用地表气压 (surface_pressure)，高海拔城市更准确。
+    压力口径: 优先使用逐时地表气压 (surface_pressure) 聚合的日均值，
+    高海拔城市（拉萨、昆明、贵阳等）的含湿量/比容更准确；
+    仅在地表气压不可用时 fallback 到海平面气压 (pressure_msl)。
+    注意: ERA5-Land 空间分辨率约 11km，地形剧烈变化区域仍存在一定偏差，
+    建议将高海拔城市的湿空气派生值作为趋势参考，而非高精度气象站值使用。
 
     Args:
         city: 城市中文名。
@@ -391,7 +399,7 @@ async def get_psychrometrics(
         response_format: 输出格式，"markdown" 或 "json"，默认 "markdown"。
 
     Returns:
-        逐日湿空气物性时间序列。
+        逐日湿空气物性时间序列，包含 pressure_basis 字段标识实际使用的压力口径。
     """
     start_date, end_date = _validate_date_range(start_date, end_date)
 
